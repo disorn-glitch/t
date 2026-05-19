@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ThaiLearning AI - Real P2P Chat & Video Call</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #111b21; color: #e9edef; display: flex; height: 100vh; overflow: hidden; }
+
+        /* 1. Splash Screen */
+        #splash-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #0b141a; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        #splash-screen img { width: 250px; height: 250px; border-radius: 50%; border: 3px solid #00a884; object-fit: cover; }
+        #splash-screen h2 { margin-top: 20px; color: #00a884; font-size: 24px; font-weight: bold; }
+
+        /* 2. โครงสร้างหน้าต่างแชท */
+        #app-container { display: flex; width: 100%; height: 100%; opacity: 0; transition: opacity 0.5s ease; }
+        
+        /* แถบด้านซ้าย (ระบบจัดการ ID และ แอดเพื่อน) */
+        .sidebar { width: 35%; background-color: #111b21; border-right: 1px solid #222e35; display: flex; flex-direction: column; }
+        .sidebar-header { height: 70px; background-color: #202c33; display: flex; flex-direction: column; padding: 10px 16px; justify-content: center; font-size: 14px; }
+        .my-id-box { color: #00a884; font-weight: bold; background: #111b21; padding: 4px 8px; border-radius: 4px; margin-top: 4px; word-break: break-all; }
+        
+        .friend-box { padding: 15px; border-bottom: 1px solid #222e35; background-color: #1c2a32; }
+        .friend-input-group { display: flex; gap: 8px; margin-top: 5px; }
+        .friend-input { flex: 1; height: 36px; background-color: #2a3942; border: none; border-radius: 6px; padding: 0 10px; color: #e9edef; outline: none; }
+        .btn-connect { background-color: #00a884; color: white; border: none; width: 40px; height: 36px; border-radius: 6px; cursor: pointer; }
+        .btn-connect:hover { background-color: #008064; }
+
+        .chat-list { flex: 1; overflow-y: auto; }
+        .chat-item { display: flex; padding: 12px 16px; border-bottom: 1px solid #222e35; align-items: center; }
+        .chat-info { margin-left: 15px; }
+        .status-txt { font-size: 13px; color: #8696a0; }
+
+        /* พื้นที่แชทหลักด้านขวา */
+        .chat-area { width: 65%; display: flex; flex-direction: column; background-color: #0b141a; position: relative; }
+        .chat-header { height: 60px; background-color: #202c33; display: flex; align-items: center; padding: 0 16px; justify-content: space-between; }
+        .header-actions i { font-size: 20px; color: #aebac1; margin-left: 25px; cursor: pointer; transition: 0.2s; }
+        .header-actions i:hover { color: #00a884; }
+
+        /* กล่องข้อความ */
+        .message-container { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
+        .message { max-width: 65%; padding: 8px 12px; border-radius: 8px; font-size: 15px; position: relative; word-wrap: break-word; color: #e9edef; }
+        .msg-in { background-color: #202c33; align-self: flex-start; border-top-left-radius: 0; }
+        .msg-out { background-color: #005c4b; align-self: flex-end; border-top-right-radius: 0; }
+        .msg-media img { max-width: 100%; max-height: 250px; border-radius: 6px; margin-top: 5px; display: block; }
+        .msg-media a { display: flex; align-items: center; gap: 8px; text-decoration: none; font-weight: bold; margin-top: 5px; }
+
+        /* แถบพิมพ์ข้อความ */
+        .input-area { height: 62px; background-color: #202c33; display: flex; align-items: center; padding: 0 16px; gap: 18px; }
+        .input-area i { font-size: 22px; color: #aebac1; cursor: pointer; transition: 0.2s; }
+        .input-area i:hover { color: #e9edef; }
+        .message-input { flex: 1; height: 42px; background-color: #2a3942; border: none; border-radius: 8px; padding: 0 12px; color: #e9edef; font-size: 15px; outline: none; }
+        
+        /* 3. หน้าต่างระบบ Video Call */
+        #video-container {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(11, 20, 26, 0.98); z-index: 100; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .video-grid { display: flex; gap: 20px; width: 90%; max-width: 800px; height: 60%; justify-content: center; align-items: center; }
+        video { width: 48%; height: 100%; background-color: #1c2a33; border-radius: 12px; object-fit: cover; border: 2px solid #222e35; }
+        #local-video { transform: scaleX(-1); } /* กลับกระจกเฉพาะฝั่งเรา */
+        .video-controls { margin-top: 30px; display: flex; gap: 20px; }
+        .btn-call { width: 55px; height: 55px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 20px; border: none; }
+        .btn-end { background-color: #ea0038; color: white; }
+        
+        #file-input, #camera-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="splash-screen">
+        <img src="logo.png" alt="ThaiLearning AI Logo" onerror="this.src='https://via.placeholder.com/250/0b141a/00a884?text=ThaiLearning+AI'">
+        <h2>ไทยเลนนิ่ง เอไอ</h2>
+    </div>
+
+    <div id="app-container">
+        
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div>🔑 ID แชทของคุณ (ส่งอันนี้ให้เพื่อนแอด):</div>
+                <div class="my-id-box" id="my-id-display">กำลังสร้าง ID...</div>
+            </div>
+            
+            <div class="friend-box">
+                <label style="font-size: 13px; color: #8696a0;">➕ เพิ่มเพื่อนด้วย ID ของเพื่อน:</label>
+                <div class="friend-input-group">
+                    <input type="text" class="friend-input" id="friend-id-input" placeholder="วาง ID ของเพื่อนที่นี่...">
+                    <button class="btn-connect" id="connect-btn" title="เชื่อมต่อหาเพื่อน"><i class="fa-solid fa-plug"></i></button>
+                </div>
+            </div>
+
+            <div class="chat-list">
+                <div class="chat-item" id="friend-status-item">
+                    <div class="avatar" style="background: #202c33; display:flex; align-items:center; justify-content:center;"><i class="fa-solid fa-user" id="status-icon" style="color: #8696a0;"></i></div>
+                    <div class="chat-info">
+                        <h4 id="partner-name-display">ยังไม่ได้เชื่อมต่อใคร</h4>
+                        <p class="status-txt" id="connection-status">กรุณาแอดเพื่อนหรือส่ง ID ให้เพื่อนแอดเข้ามา</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="chat-area">
+            <div class="chat-header">
+                <div class="header-info">
+                    <h4 id="chat-title">ห้องแชทคู่สนทนา</h4>
+                </div>
+                <div class="header-actions">
+                    <i class="fa-solid fa-video" id="start-call-btn" title="กดเพื่อวิดีโอคอลหาเพื่อน" style="pointer-events: none; opacity: 0.4;"></i>
+                </div>
+            </div>
+
+            <div class="message-container" id="message-container">
+                <div class="message msg-in">ระบบ P2P ปลอดภัยสูง เริ่มใช้งานแล้ว! แอด ID ด้านซ้ายเพื่อเริ่มคุยข้ามเครื่องได้ทันทีครับ</div>
+            </div>
+
+            <div class="input-area">
+                <i class="fa-solid fa-camera" id="camera-btn" title="เปิดกล้องถ่ายภาพส่ง"></i>
+                <i class="fa-solid fa-paperclip" id="clip-btn" title="ดึงไฟล์จากเครื่องส่ง"></i>
+                <input type="text" class="message-input" id="msg-input" placeholder="พิมพ์ข้อความ..." disabled>
+                <i class="fa-solid fa-paper-plane" id="send-btn" style="color: #aebac1; pointer-events: none;" title="ส่ง"></i>
+            </div>
+
+            <input type="file" id="file-input" accept="*/*">
+            <input type="file" id="camera-input" capture="environment" accept="image/*">
+
+            <div id="video-container">
+                <div style="color: #00a884; font-size: 20px; margin-bottom: 15px; font-weight: bold;"><i class="fa-solid fa-video"></i> วิดีโอคอลสด (P2P Real-time)</div>
+                <div class="video-grid">
+                    <video id="local-video" autoplay playsinline muted></video>
+                    <video id="remote-video" autoplay playsinline></video>
+                </div>
+                <div class="video-controls">
+                    <button class="btn-call btn-end" id="end-call-btn" title="วางสาย"><i class="fa-solid fa-phone-slash"></i></button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // แสดง Splash Screen 2.5 วินาทีเหมือนเดิม
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                document.getElementById('splash-screen').style.opacity = 0;
+                document.getElementById('app-container').style.opacity = 1;
+                setTimeout(() => document.getElementById('splash-screen').style.display = 'none', 500);
+            }, 2500);
+        });
+
+        // ประกาศตัวแปรหน้าจอ
+        const msgContainer = document.getElementById('message-container');
+        const msgInput = document.getElementById('msg-input');
+        const sendBtn = document.getElementById('send-btn');
+        const clipBtn = document.getElementById('clip-btn');
+        const fileInput = document.getElementById('file-input');
+        const cameraBtn = document.getElementById('camera-btn');
+        const cameraInput = document.getElementById('camera-input');
+        const startCallBtn = document.getElementById('start-call-btn');
+        const endCallBtn = document.getElementById('end-call-btn');
+        const videoContainer = document.getElementById('video-container');
+        const localVideo = document.getElementById('local-video');
+        const remoteVideo = document.getElementById('remote-video');
+
+        const myIdDisplay = document.getElementById('my-id-display');
+        const friendIdInput = document.getElementById('friend-id-input');
+        const connectBtn = document.getElementById('connect-btn');
+        const partnerNameDisplay = document.getElementById('partner-name-display');
+        const connectionStatus = document.getElementById('connection-status');
+        const statusIcon = document.getElementById('status-icon');
+
+        // ตัวแปรเก็บสถานะระบบเน็ตเวิร์ก P2P
+        let peer;
+        let conn = null; // สำหรับแชทและส่งไฟล์
+        let currentCall = null; // สำหรับสายวิดีโอคอล
+        let myStream = null;
+
+        // สุ่มสร้าง ID สั้นๆ สไตล์เพื่อนจำง่ายขึ้น (ตัวอย่าง: tlai-xxxxx)
+        const generatedId = 'tlai-' + Math.floor(10000 + Math.random() * 90000);
+        
+        // เริ่มต้นระบบ Peer โดยใช้คลาวด์เซิร์ฟเวอร์ฟรีของ PeerJS ทำหน้าที่จับคู่ ID ให้
+        peer = new Peer(generatedId);
+
+        peer.on('open', (id) => {
+            myIdDisplay.innerText = id;
+        });
+
+        // --- กรณีที่ 1: มีเพื่อนนำ ID ของเราไปแอด (รอรับการเชื่อมต่อแชท) ---
+        peer.on('connection', (connection) => {
+            conn = connection;
+            setupChatInterface();
+            setupChatEvents();
+        });
+
+        // --- กรณีที่ 2: เป็นฝ่ายกดแอดเพื่อนเอง ---
+        connectBtn.addEventListener('click', () => {
+            const friendId = friendIdInput.value.trim();
+            if(!friendId) return alert('กรุณาใส่ ID ของเพื่อนก่อนครับ');
+            if(friendId === generatedId) return alert('ไม่สามารถแอด ID ตัวเองได้ครับ');
+            
+            connectionStatus.innerText = 'กำลังเชื่อมต่อไปยังปลายสาย...';
+            conn = peer.connect(friendId);
+            
+            conn.on('open', () => {
+                setupChatInterface();
+                setupChatEvents();
+            });
+            
+            conn.on('error', (err) => {
+                alert('เชื่อมต่อล้มเหลว ตรวจสอบว่า ID เพื่อนถูกต้องและเพื่อนเปิดหน้านี้อยู่หรือไม่');
+                connectionStatus.innerText = 'การเชื่อมต่อผิดพลาด';
+            });
+        });
+
+        // เปิดสิทธิ์ปุ่มใช้งานเมื่อเชื่อมเพื่อนสำเร็จ
+        function setupChatInterface() {
+            partnerNameDisplay.innerText = 'เพื่อนของคุณ (' + conn.peer + ')';
+            connectionStatus.innerText = 'เชื่อมต่อสำเร็จ! พร้อมคุยสดแล้ว';
+            connectionStatus.style.color = '#00a884';
+            statusIcon.style.color = '#00a884';
+            document.getElementById('friend-status-item').style.backgroundColor = '#202c33';
+            document.getElementById('chat-title').innerText = 'กำลังคุยกับ: ' + conn.peer;
+
+            // ปลดล็อกฟังก์ชันทั้งหมด
+            msgInput.disabled = false;
+            sendBtn.style.color = '#00a884';
+            sendBtn.style.pointerEvents = 'auto';
+            startCallBtn.style.opacity = '1';
+            startCallBtn.style.pointerEvents = 'auto';
+        }
+
+        // จัดการระบบรับส่งข้อมูลแชทภายในท่อ P2P
+        function setupChatEvents() {
+            conn.on('data', (data) => {
+                appendMessage(data, 'msg-in');
+            });
+            conn.on('close', () => {
+                alert('เพื่อนของคุณได้ตัดการเชื่อมต่อไปแล้ว');
+                location.reload();
+            });
+        }
+
+        // --- ระบบส่งข้อความ ---
+        sendBtn.addEventListener('click', sendMessage);
+        msgInput.addEventListener('keypress', (e) => { if(e.key === 'Enter') sendMessage(); });
+
+        function sendMessage() {
+            const text = msgInput.value.trim();
+            if(text && conn) {
+                const dataPayload = { type: 'text', content: text };
+                conn.send(dataPayload); // ส่งไฟล์ดิบทะลุไปเครื่องเพื่อนทันที
+                appendMessage(dataPayload, 'msg-out');
+                msgInput.value = '';
+            }
+        }
+
+        // --- ระบบดึงไฟล์ส่งข้ามเครื่อง ---
+        clipBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && conn) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const dataPayload = {
+                        type: file.type.startsWith('image/') ? 'image' : 'file',
+                        name: file.name,
+                        content: event.target.result
+                    };
+                    conn.send(dataPayload);
+                    appendMessage(dataPayload, 'msg-out');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // --- ระบบกดกล้องถ่ายภาพส่งสด ---
+        cameraBtn.addEventListener('click', () => cameraInput.click());
+        cameraInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file && conn) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const dataPayload = { type: 'image', content: event.target.result };
+                    conn.send(dataPayload);
+                    appendMessage(dataPayload, 'msg-out');
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // ฟังก์ชันวาดข้อความลงบนหน้าต่าง
+        function appendMessage(data, className) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('message', className);
+            const timeStr = new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+            if(data.type === 'text') {
+                msgDiv.innerHTML = `${data.content}<br><small style="color:#8696a0; font-size:10px; display:block; text-align:right; margin-top:4px;">${timeStr}</small>`;
+            } else if (data.type === 'image') {
+                msgDiv.innerHTML = `<div class="msg-media"><img src="${data.content}"><small style="color:#8696a0; font-size:10px; display:block; text-align:right; margin-top:4px;">📷 รูปภาพ • ${timeStr}</small></div>`;
+            } else if (data.type === 'file') {
+                msgDiv.innerHTML = `<div class="msg-media"><a href="${data.content}" download="${data.name}" style="color:#53bdeb;"><i class="fa-solid fa-file-invoice" style="font-size:24px;"></i> ${data.name}</a><small style="color:#8696a0; font-size:10px; display:block; text-align:right; margin-top:4px;">📂 แฟ้มไฟล์ดาวน์โหลด • ${timeStr}</small></div>`;
+            }
+
+            msgContainer.appendChild(msgDiv);
+            msgContainer.scrollTop = msgContainer.scrollHeight;
+        }
+
+        // --- ระบบ Video Call โทรจริงดึงสตรีมภาพสด ---
+        startCallBtn.addEventListener('click', async () => {
+            if(!conn) return;
+            videoContainer.style.display = 'flex';
+            try {
+                myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                localVideo.srcObject = myStream;
+                
+                // สั่งยิงสายวิดีโอคอลไปหา ID ของเพื่อน
+                currentCall = peer.call(conn.peer, myStream);
+                currentCall.on('stream', (remoteStream) => {
+                    remoteVideo.srcObject = remoteStream;
+                });
+            } catch (err) {
+                alert('ไม่สามารถเปิดใช้งานกล้องได้: ' + err);
+                videoContainer.style.display = 'none';
+            }
+        });
+
+        // รอรับสายเรียกเข้าจากเพื่อน
+        peer.on('call', async (call) => {
+            const accept = confirm("📞 เพื่อนของคุณกำลังเปิดกล้องวิดีโอคอลเข้ามา ต้องการรับสายหรือไม่?");
+            if (accept) {
+                videoContainer.style.display = 'flex';
+                currentCall = call;
+                try {
+                    myStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    localVideo.srcObject = myStream;
+                    
+                    call.answer(myStream); // รับสายพร้อมส่งสตรีมกล้องเรากลับไป
+                    call.on('stream', (remoteStream) => {
+                        remoteVideo.srcObject = remoteStream;
+                    });
+                } catch (err) {
+                    alert('รับสายล้มเหลวเนื่องจากปัญหาอุปกรณ์กล้อง: ' + err);
+                }
+            } else {
+                call.close();
+            }
+        });
+
+        // วางสายสนทนาวิดีโอ
+        endCallBtn.addEventListener('click', () => {
+            if(currentCall) currentCall.close();
+            if(myStream) {
+                myStream.getTracks().forEach(track => track.stop());
+            }
+            videoContainer.style.display = 'none';
+        });
+    </script>
+</body>
+</html>
